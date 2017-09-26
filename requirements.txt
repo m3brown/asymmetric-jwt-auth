@@ -3,3 +3,4 @@ versiontag==1.2.0
 PyJWT==1.4.2
 cryptography==1.7.1
 Django==1.8.0
+djangorestframework>=3.6.0

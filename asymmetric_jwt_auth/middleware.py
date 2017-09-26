@@ -7,8 +7,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class JWTAuthMiddleware(object):
-    """Django middleware class for authenticating users using JWT Authentication headers"""
+class JWTAuthBase(object):
+    """Base class for Middleware and DRF Authentication"""
 
     def create_nonce_key(self, username, iat):
         """
@@ -55,6 +55,43 @@ class JWTAuthMiddleware(object):
         used = cache.get(key, [])
         return nonce not in used
 
+    def process_base(self, request):
+        """
+        Base function for processing middleware (process_request) and DRF authentication
+        (authenticate)
+        """
+
+        if 'HTTP_AUTHORIZATION' not in request.META:
+            return None
+
+        method, claim = request.META['HTTP_AUTHORIZATION'].split(' ', 1)
+        if method.upper() != AUTH_METHOD:
+            return None
+
+        username = token.get_claimed_username(claim)
+        if not username:
+            return None
+
+        User = get_user_model()
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return None
+
+        claim_data = None
+        for public in user.public_keys.all():
+            claim_data = token.verify(claim, public.key, validate_nonce=self.validate_nonce)
+            if claim_data:
+                break
+        if not claim_data:
+            return None
+
+        logger.debug('Successfully authenticated %s using JWT', user.username)
+        return user
+
+
+class JWTAuthMiddleware(JWTAuthBase):
+    """Django middleware class for authenticating users using JWT Authentication headers"""
 
     def process_request(self, request):
         """
@@ -66,31 +103,7 @@ class JWTAuthMiddleware(object):
 
         :param request: Django Request instance
         """
-        if 'HTTP_AUTHORIZATION' not in request.META:
-            return
-
-        method, claim = request.META['HTTP_AUTHORIZATION'].split(' ', 1)
-        if method.upper() != AUTH_METHOD:
-            return
-
-        username = token.get_claimed_username(claim)
-        if not username:
-            return
-
-        User = get_user_model()
-        try:
-            user = User.objects.get(username=username)
-        except User.DoesNotExist:
-            return
-
-        claim_data = None
-        for public in user.public_keys.all():
-            claim_data = token.verify(claim, public.key, validate_nonce=self.validate_nonce)
-            if claim_data:
-                break
-        if not claim_data:
-            return
-
-        logger.debug('Successfully authenticated %s using JWT', user.username)
-        request._dont_enforce_csrf_checks = True
-        request.user = user
+        user = self.process_base(request)
+        if user:
+            request._dont_enforce_csrf_checks = True
+            request.user = user
