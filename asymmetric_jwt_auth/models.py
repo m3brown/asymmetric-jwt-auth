@@ -41,6 +41,8 @@ class PublicKey(models.Model):
     #: Comment describing the key. Use this to note what system is authenticating with the key, when it was last rotated, etc.
     comment = models.CharField(max_length=100, help_text="Comment describing this key", blank=True)
 
+    created = models.DateTimeField(auto_now_add=True)
+
     def save(self, *args, **kwargs):
         key_parts = self.key.split(' ')
         if len(key_parts) == 3 and not self.comment:
